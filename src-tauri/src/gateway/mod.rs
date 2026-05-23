@@ -62,10 +62,9 @@ impl GatewayState {
     }
 
     pub fn add_log(&self, log: &types::RequestLog) {
-        if let Some(conn) = self.db.try_lock() {
-            if let Err(e) = db::add_log(&conn, log) {
-                tracing::error!("Failed to persist log: {}", e);
-            }
+        let conn = self.db.lock();
+        if let Err(e) = db::add_log(&conn, log) {
+            tracing::error!("Failed to persist log: {}", e);
         }
     }
 

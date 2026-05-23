@@ -40,7 +40,14 @@ pub fn get_stats(
     db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<StatsSummary, String> {
     let conn = db.lock();
-    let config = crate::db::load_config(&conn)?.unwrap_or_default();
+    let config = match crate::db::load_config(&conn) {
+        Ok(Some(c)) => c,
+        Ok(None) => Default::default(),
+        Err(e) => {
+            tracing::warn!("Failed to load config in get_stats: {}, using defaults", e);
+            Default::default()
+        }
+    };
     let input_price = config.server.token_price_per_1k;
     let output_price = config.server.token_price_per_1k;
     let mut summary = db::get_stats(&conn, days.map(|d| d as i32))?;

@@ -15,7 +15,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Zap, Database, RefreshCw, Copy, Server, Key, Terminal, Power, PowerOff, Check, Eye, EyeOff, DollarSign } from "lucide-react";
+import { Zap, Database, RefreshCw, Copy, Server, Key, Terminal, Power, PowerOff, Check, Eye, EyeOff, DollarSign, AlertTriangle } from "lucide-react";
 import { useI18n } from "../i18n/I18nContext";
 import { useToastStore } from "../store/toastStore";
 
@@ -31,6 +31,7 @@ export function Dashboard() {
   const saveConfig = useConfigStore((s) => s.saveConfig);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const fetchGatewayStatus = useGatewayStore((s) => s.fetchStatus);
+  const statsError = useStatsStore((s) => s.error);
   const startGateway = useGatewayStore((s) => s.startGateway);
   const stopGateway = useGatewayStore((s) => s.stopGateway);
   const addToast = useToastStore((s) => s.addToast);
@@ -328,6 +329,13 @@ export function Dashboard() {
           </p>
         </div>
       </div>
+
+      {statsError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span>{statsError}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard

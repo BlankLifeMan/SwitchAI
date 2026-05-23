@@ -49,6 +49,7 @@ export const useStatsStore = create<StatsState>((set) => ({
       });
       set({ stats, loading: false });
     } catch (e) {
+      console.error("[statsStore] fetchStats failed:", e);
       set({ error: String(e), loading: false });
     }
   },
@@ -73,6 +74,7 @@ export const useStatsStore = create<StatsState>((set) => ({
       });
       set({ dailyStats, loading: false });
     } catch (e) {
+      console.error("[statsStore] fetchDailyStats failed:", e);
       set({ error: String(e), loading: false });
     }
   },
