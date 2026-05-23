@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+run.log
+logs/
+
+# Tauri
+src-tauri/gen/
+src-tauri/tauri.conf.json.bak
+
+# Build artifacts
+*.msi
+*.dmg
+*.deb
+*.AppImage
+
+# Misc
+*.bak
+
+# Secret files / API keys
+*-key.txt
+*-key.json
+*.pem
