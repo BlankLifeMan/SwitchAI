@@ -78,21 +78,34 @@ impl GatewayState {
 
     pub fn start_health_check_loop(&mut self, state: SharedGatewayState) {
         let health = self.provider_health.clone();
+        let db = self.db.clone();
         let handle = tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .ok();
+            let Some(client) = client else {
+                tracing::error!("Health check loop: failed to build reqwest client");
+                return;
+            };
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-                let (providers, running) = {
+                let providers = {
                     let gw = state.lock();
-                    (gw.config.providers.clone(), gw.is_running())
+                    if !gw.is_running() {
+                        break;
+                    }
+                    gw.config.providers.clone()
                 };
-                if !running {
-                    break;
-                }
                 for p in &providers {
                     if !p.enabled {
                         continue;
                     }
-                    let ok = check_provider_health(&p.api_base).await;
+                    let api_key = {
+                        let conn = db.lock();
+                        crate::db::get_api_key(&conn, &p.id).unwrap_or(None)
+                    };
+                    let ok = check_provider_health(&client, &p.api_base, api_key.as_deref()).await;
                     let mut health_map = health.lock();
                     let entry = health_map.entry(p.id.clone()).or_insert_with(|| ProviderHealth {
                         consecutive_failures: 0,
@@ -135,17 +148,15 @@ impl GatewayState {
     }
 }
 
-async fn check_provider_health(api_base: &str) -> bool {
+async fn check_provider_health(client: &reqwest::Client, api_base: &str, api_key: Option<&str>) -> bool {
     let url = format!("{}/v1/models", api_base.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .ok();
-    let client = match client {
-        Some(c) => c,
-        None => return false,
-    };
-    match client.get(&url).send().await {
+    let mut req = client.get(&url);
+    if let Some(key) = api_key {
+        if !key.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", key));
+        }
+    }
+    match req.send().await {
         Ok(resp) => resp.status().is_success(),
         Err(e) => {
             tracing::debug!("Health check failed for {}: {}", url, e);
