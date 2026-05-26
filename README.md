@@ -25,7 +25,7 @@
   <img src="https://img.shields.io/badge/rust-1.80+-CE422B?logo=rust" alt="Rust" />
 </p>
 
-> **注意：** 本文档为中文版，是 SwitchAI 项目的主要参考文档。英文文档（[README.zh-CN.md](./README.zh-CN.md)）据此同步生成。
+> **注意：** 本文档为中文版，是 SwitchAI 项目的主要参考文档。英文文档（[README.en.md](./README.en.md)）据此同步生成。
 
 ---
 
