@@ -24,10 +24,22 @@ pub struct GatewayState {
     request_count: Arc<AtomicU64>,
     provider_health: Arc<Mutex<HashMap<String, ProviderHealth>>>,
     health_handle: Option<tokio::task::JoinHandle<()>>,
+    log_tx: tokio::sync::mpsc::UnboundedSender<types::RequestLog>,
 }
 
 impl GatewayState {
     pub fn new(config: Config, db: Arc<Mutex<Connection>>) -> Self {
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::unbounded_channel::<types::RequestLog>();
+        let db_clone = db.clone();
+        tokio::spawn(async move {
+            while let Some(log) = log_rx.recv().await {
+                let conn = db_clone.lock();
+                if let Err(e) = db::add_log(&conn, &log) {
+                    tracing::error!("Failed to persist log: {}", e);
+                }
+            }
+        });
+
         Self {
             config,
             db,
@@ -38,6 +50,7 @@ impl GatewayState {
             request_count: Arc::new(AtomicU64::new(0)),
             provider_health: Arc::new(Mutex::new(HashMap::new())),
             health_handle: None,
+            log_tx,
         }
     }
 
@@ -62,9 +75,8 @@ impl GatewayState {
     }
 
     pub fn add_log(&self, log: &types::RequestLog) {
-        let conn = self.db.lock();
-        if let Err(e) = db::add_log(&conn, log) {
-            tracing::error!("Failed to persist log: {}", e);
+        if let Err(e) = self.log_tx.send(log.clone()) {
+            tracing::error!("Failed to send log to database worker: {}", e);
         }
     }
 
@@ -97,6 +109,8 @@ impl GatewayState {
                     }
                     gw.config.providers.clone()
                 };
+                
+                let mut futures = Vec::new();
                 for p in &providers {
                     if !p.enabled {
                         continue;
@@ -105,35 +119,43 @@ impl GatewayState {
                         let conn = db.lock();
                         crate::db::get_api_key(&conn, &p.id).unwrap_or(None)
                     };
-                    let ok = check_provider_health(&client, &p.api_base, api_key.as_deref()).await;
-                    let mut health_map = health.lock();
-                    let entry = health_map.entry(p.id.clone()).or_insert_with(|| ProviderHealth {
-                        consecutive_failures: 0,
-                        unhealthy: false,
-                        last_check: None,
-                        last_error: None,
-                    });
-                    entry.last_check = Some(chrono::Utc::now().to_rfc3339());
-                    if ok {
-                        if entry.unhealthy {
-                            tracing::info!("Provider '{}' recovered - marking healthy", p.id);
+                    let client = client.clone();
+                    let health = health.clone();
+                    let p_id = p.id.clone();
+                    let api_base = p.api_base.clone();
+                    
+                    futures.push(tokio::spawn(async move {
+                        let ok = check_provider_health(&client, &api_base, api_key.as_deref()).await;
+                        let mut health_map = health.lock();
+                        let entry = health_map.entry(p_id.clone()).or_insert_with(|| ProviderHealth {
+                            consecutive_failures: 0,
+                            unhealthy: false,
+                            last_check: None,
+                            last_error: None,
+                        });
+                        entry.last_check = Some(chrono::Utc::now().to_rfc3339());
+                        if ok {
+                            if entry.unhealthy {
+                                tracing::info!("Provider '{}' recovered - marking healthy", p_id);
+                            }
+                            entry.consecutive_failures = 0;
+                            entry.unhealthy = false;
+                            entry.last_error = None;
+                        } else {
+                            entry.consecutive_failures += 1;
+                            entry.last_error = Some("Health check to /v1/models failed".to_string());
+                            if entry.consecutive_failures >= 3 && !entry.unhealthy {
+                                tracing::warn!(
+                                    "Provider '{}' failed {} health checks - marking unhealthy",
+                                    p_id,
+                                    entry.consecutive_failures
+                                );
+                                entry.unhealthy = true;
+                            }
                         }
-                        entry.consecutive_failures = 0;
-                        entry.unhealthy = false;
-                        entry.last_error = None;
-                    } else {
-                        entry.consecutive_failures += 1;
-                        entry.last_error = Some("Health check to /v1/models failed".to_string());
-                        if entry.consecutive_failures >= 3 && !entry.unhealthy {
-                            tracing::warn!(
-                                "Provider '{}' failed {} health checks - marking unhealthy",
-                                p.id,
-                                entry.consecutive_failures
-                            );
-                            entry.unhealthy = true;
-                        }
-                    }
+                    }));
                 }
+                let _ = futures::future::join_all(futures).await;
             }
         });
         self.health_handle = Some(handle);

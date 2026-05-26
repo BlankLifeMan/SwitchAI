@@ -95,6 +95,8 @@ pub struct Config {
     pub gateway_on_startup: bool,
     #[serde(default)]
     pub last_gateway_state: bool,
+    #[serde(default)]
+    pub model_mappings: HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -109,6 +111,7 @@ impl Default for Config {
             auto_start: false,
             gateway_on_startup: false,
             last_gateway_state: false,
+            model_mappings: HashMap::new(),
         }
     }
 }
@@ -153,6 +156,7 @@ pub struct ConfigDisplay {
     pub auto_start: bool,
     pub gateway_on_startup: bool,
     pub last_gateway_state: bool,
+    pub model_mappings: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

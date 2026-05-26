@@ -38,6 +38,7 @@ export interface Config {
   auto_start: boolean;
   gateway_on_startup: boolean;
   last_gateway_state: boolean;
+  model_mappings: Record<string, string>;
 }
 
 export interface GatewayStatus {

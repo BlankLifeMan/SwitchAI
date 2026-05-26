@@ -79,6 +79,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tokenPricePer1k: config.server.token_price_per_1k ?? 0.01,
         providers: config.providers,
         routing: config.routing,
+        modelMappings: config.model_mappings,
       });
       set({ config: result, loading: false });
     } catch (e) {

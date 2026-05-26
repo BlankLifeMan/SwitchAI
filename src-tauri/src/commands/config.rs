@@ -7,6 +7,8 @@ use rusqlite::Connection;
 use std::sync::Arc;
 use tauri::State;
 
+use std::collections::HashMap;
+
 fn config_to_display(config: &Config) -> ConfigDisplay {
     ConfigDisplay {
         providers: config.providers.iter().map(ProviderDisplay::from).collect(),
@@ -18,6 +20,7 @@ fn config_to_display(config: &Config) -> ConfigDisplay {
         auto_start: config.auto_start,
         gateway_on_startup: config.gateway_on_startup,
         last_gateway_state: config.last_gateway_state,
+        model_mappings: config.model_mappings.clone(),
     }
 }
 
@@ -45,6 +48,7 @@ pub fn save_config(
     token_price_per_1k: f64,
     providers: Vec<Provider>,
     routing: RoutingConfig,
+    model_mappings: HashMap<String, String>,
     db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<ConfigDisplay, String> {
     let conn = db.lock();
@@ -62,6 +66,7 @@ pub fn save_config(
     current.gateway_on_startup = gateway_on_startup;
     current.providers = providers;
     current.routing = routing;
+    current.model_mappings = model_mappings;
 
     db::save_config(&conn, &current, true)?;
     Ok(config_to_display(&current))

@@ -101,9 +101,8 @@ pub fn run() {
             backtrace,
         );
         eprintln!("{}", crash_entry);
-         let crash_path = std::env::current_dir()
-             .unwrap_or_else(|_| std::path::PathBuf::from("."))
-             .join("crash.log");
+         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+         let crash_path = home.join(".switchai").join("crash.log");
          let _ = std::fs::OpenOptions::new()
              .create(true)
              .append(true)

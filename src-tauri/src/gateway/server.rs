@@ -37,6 +37,7 @@ pub async fn start_server(
         .route("/v1/models", get(models_handler))
         .route("/health", get(health_handler))
         .route("/", get(health_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(app_state.clone());
 
@@ -225,10 +226,9 @@ async fn models_handler(
 async fn chat_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Json(request): Json<ChatCompletionRequest>,
+    Json(mut request): Json<ChatCompletionRequest>,
 ) -> Response {
     let start_time = std::time::Instant::now();
-    let model = request.model.clone();
     let is_stream = request.stream.unwrap_or(false);
 
     let (mut gateway_config, request_counter, health_map) = {
@@ -239,6 +239,14 @@ async fn chat_handler(
             gw.health_map(),
         )
     };
+
+    let original_model = request.model.clone();
+    let mut model = original_model.clone();
+    if let Some(mapped_model) = gateway_config.model_mappings.get(&model) {
+        tracing::info!("Mapping model '{}' to '{}'", model, mapped_model);
+        model = mapped_model.clone();
+        request.model = mapped_model.clone();
+    }
 
     let unhealthy_ids: Vec<String> = {
         health_map.lock().iter()
@@ -334,7 +342,6 @@ async fn chat_handler(
     let start_idx = RouteSelector::pick_for_load_balance(&lb_candidates);
     let max_tries = candidates_with_keys.len();
 
-    let mut request = request;
     request.model = effective_model.clone();
     let request_body = match serde_json::to_string(&request) {
         Ok(b) => b,
@@ -657,20 +664,32 @@ async fn handle_streaming_chat(
                 let pid_ss = pid.clone();
                 let sse_data_chunks = Arc::new(Mutex::new(Vec::<String>::new()));
                 let sse_chunks_ref = sse_data_chunks.clone();
+                let request_body_for_log = request_body.clone();
+                let url_for_log = url.clone();
 
                 tokio::spawn(async move {
                     let mut stream = response.bytes_stream();
+                    let mut buffer = Vec::new();
                     while let Some(chunk) = stream.next().await {
                         match chunk {
                             Ok(bytes) => {
-                                let text = String::from_utf8_lossy(&bytes);
-                                for line in text.lines() {
-                                    if let Some(data) = line.strip_prefix("data: ") {
+                                if tx.send(Ok(bytes.clone())).await.is_err() {
+                                    break;
+                                }
+                                buffer.extend_from_slice(&bytes);
+                                while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                                    let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
+                                    let mut line_len = line_bytes.len();
+                                    if line_len > 0 && line_bytes[line_len - 1] == b'\n' {
+                                        line_len -= 1;
+                                    }
+                                    if line_len > 0 && line_bytes[line_len - 1] == b'\r' {
+                                        line_len -= 1;
+                                    }
+                                    let line_str = String::from_utf8_lossy(&line_bytes[..line_len]);
+                                    if let Some(data) = line_str.strip_prefix("data: ") {
                                         sse_chunks_ref.lock().push(data.to_string());
                                     }
-                                }
-                                if tx.send(Ok(bytes)).await.is_err() {
-                                    break;
                                 }
                             }
                             Err(e) => {
@@ -681,15 +700,15 @@ async fn handle_streaming_chat(
                             }
                         }
                     }
-                });
+                    if !buffer.is_empty() {
+                        let line_str = String::from_utf8_lossy(&buffer);
+                        if let Some(data) = line_str.strip_prefix("data: ") {
+                            sse_chunks_ref.lock().push(data.to_string());
+                        }
+                    }
 
-                let sse_chunks_for_log = sse_data_chunks.clone();
-                let request_body_for_log = request_body.clone();
-                let url_for_log = url.clone();
-
-                tokio::spawn(async move {
                     let (input_tokens, output_tokens) =
-                        extract_tokens_from_sse_chunks(&sse_data_chunks.lock());
+                        extract_tokens_from_sse_chunks(&sse_chunks_ref.lock());
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let duration = start_time.elapsed().as_millis() as u64;
                         RequestLog {
@@ -704,7 +723,7 @@ async fn handle_streaming_chat(
                             error_message: None,
                             is_streaming: true,
                             request_body: Some(truncate_body(&request_body_for_log, 8000)),
-                            response_body: Some(sse_chunks_for_log.lock().join("\n").chars().take(2000).collect()),
+                            response_body: Some(sse_chunks_ref.lock().join("\n").chars().take(2000).collect()),
                             endpoint: Some(url_for_log),
                             request_headers: None,
                         }
