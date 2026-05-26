@@ -1,6 +1,6 @@
 [package]
 name = "switchai"
-version = "1.0.0"
+version = "1.0.2"
 edition = "2021"
 description = "Desktop AI Proxy Gateway with load balancing, failover, and smart routing for multiple AI providers"
 authors = ["SwitchAI Contributors"]

@@ -1,7 +1,7 @@
 {
   "name": "switchai",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "description": "Desktop AI Proxy Gateway with load balancing, failover, and smart routing for multiple AI providers",
   "author": "SwitchAI Contributors",
