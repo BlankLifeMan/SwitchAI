@@ -4,6 +4,21 @@
 
 All notable changes to SwitchAI will be documented in this file.
 
+## [1.0.2] - 2026-05-26
+
+### Added
+
+- **Model Aliases & Mappings** — Added a model aliasing rewrite mechanism, supporting visual configuration and persistence of aliases on the "Model Routing" page, silently translating client requests to target backend models.
+
+### Fixed & Improved
+
+- **SSE Stream Splitting Fix** — Rebuilt SSE parsing with byte-oriented buffer line parsing, solving multi-byte (Chinese) character truncation across TCP pack boundaries.
+- **Async Log Worker** — Refactored SQLite log writing to an asynchronous channel worker, eliminating write lock contention blocking gateway request forwarding threads.
+- **Concurrent Health Checks** — Refactored health check loop to run concurrent async tasks, preventing slow or timeout nodes from blocking global health updates.
+- **Stability Improvement** — Increased HTTP gateway request body size limit to 50MB to support large context queries, and moved crash dump (`crash.log`) directory to the user's home directory to prevent secondary write-access crashes on Windows.
+
+---
+
 ## [1.0.1] - 2025-07-23
 
 ### Fixed
