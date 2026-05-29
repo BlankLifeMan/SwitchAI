@@ -4,7 +4,46 @@
 
 All notable changes to SwitchAI will be documented in this file.
 
+## [1.0.3] - 2026-05-29
+
+### Added
+
+- **Built-in Chat Playground** — New sidebar entry "Playground" provides an in-app chat sandbox. Select any configured model, send messages with full streaming support, and observe the real-time routing decision trace on the right panel without needing any external client.
+- **Live Route Simulator** — Within the Playground, a collapsible "Live Route Simulator" panel instantly previews the routing decision path (gateway ingress mode → alias rewrite → strategy → dispatch queue) as soon as you select a model or change configuration, without sending any real request.
+- **Route Trace Diagnostics** — After each Playground request, a rich diagnostic timeline appears showing: overall result banner (success/failure), total latency, time distribution bar across all attempts, and per-attempt cards with provider name, HTTP status code, response time, full endpoint URL, and error messages.
+- **Provider Latency Sparkline** — The Providers page now includes a dedicated "Latency" column showing the average health-check ping time and an SVG trend sparkline for the last 10 health checks.
+- **Advanced Routing Strategies** — Two new per-model routing strategies are now available: **Lowest Latency** (sorts providers by average health-check latency ascending) and **Lowest Cost** (sorts by estimated cost per 1K tokens ascending using the pricing config).
+- **Wildcard Model Routing Rules** — Routing strategy rules now support wildcard patterns (e.g., `gpt-*`, `*`). A default `*` → Failover rule is auto-created for new configurations.
+- **Global Log Fuzzy Search** — The Logs page search bar now performs full-text fuzzy matching across model name, provider, HTTP status code, error message, request body, response body, client key name, and endpoint URL.
+- **Model Pricing Configuration** — System settings now include a dedicated "Model Pricing" section where you can define per-model (with wildcard support) input/output prices per 1K tokens. These prices are used for both dashboard cost estimation and "Lowest Cost" routing.
+- **Client API Keys Management** — Added a client API key management section in System Settings. Multiple named API keys can be created and enabled/disabled independently for controlling access to the local gateway.
+- **Gateway Mode Quick Switch** — The Playground and Dashboard now include an inline gateway mode toggle (Direct / Unified) with real-time config saving.
+- **Model Routing Rules Default Config** — On first launch or when no routing rules exist, a default wildcard `*` Failover rule is automatically populated.
+
+### Fixed
+
+- **Routing rules save failure** — Fixed a critical serialization mismatch: the frontend was sending `"lowestlatency"` / `"lowestcost"` but Rust serde expected `"lowest_latency"` / `"lowest_cost"`, silently failing deserialization and discarding the entire `routing` config on save.
+- **Model alias mappings save failure** — The same serialization path issue meant that model alias mappings were sometimes not persisted across restarts.
+- **Wildcard routing rules not matching** — `router.rs` was using exact string equality (`r.model == model_name`) to match routing rules, causing wildcard patterns like `*` and `gpt-*` to never fire. Fixed by switching to `matches_wildcard()`.
+- **Route trace strategy name display** — The `X-SwitchAI-Trace` response header was serializing `routing_strategy` using Rust `Debug` format (e.g., `"Failover"`) instead of the serde JSON name (e.g., `"failover"`), causing Playground to display incorrect strategy labels.
+- **"Configure routing" button showing in English** — The `models.collapseRouting` i18n key was missing from both language blocks in `translations.ts`, causing the collapse button to always fall back to its hard-coded English string.
+- **Provider page layout deformation when gateway is running** — The Providers table stretched incorrectly when the latency sparkline column appeared. Fixed by adding fixed column widths and constraining the SVG sparkline to 60px.
+- **Dashboard API gateway mode switch not working** — Clicking the mode switch immediately triggered "Save successful" toast but did not actually apply the change. The save handler now correctly reads the new mode value before persisting.
+- **Model routing page switching to English** — Fixed missing `models.collapseRouting` translation key.
+- **`e.g.` prefix in placeholder text** — Removed `e.g.` prefixes from all input placeholder hints throughout the app, replacing them with plain example text.
+- **"Token price" field in server settings** — Removed the deprecated per-request token price field from System Settings; pricing is now exclusively managed through the Model Pricing configuration section.
+
+### Improved
+
+- Providers table columns now have fixed widths to prevent layout shifts when health data loads.
+- Playground right panel uses a two-section layout: collapsible Live Simulator at the top + always-visible Trace Timeline below.
+- Route trace panel now shows a summary banner, color-coded time distribution bar, and fully-expanded attempt cards with endpoint URLs always visible (no accordion needed).
+- Model Routing page: strategy option labels in the dropdown now correctly display Chinese names when the app is in Chinese mode.
+
+---
+
 ## [1.0.2] - 2026-05-26
+
 
 ### Added
 

@@ -102,6 +102,33 @@ pub async fn gateway_status(
     Ok(get_status_inner(&state))
 }
 
+#[tauri::command]
+pub async fn reset_provider_health(
+    id: String,
+    state: State<'_, SharedGatewayState>,
+) -> Result<GatewayStatus, String> {
+    {
+        let gw = state.lock();
+        let health_arc = gw.health_map();
+        let mut health_map = health_arc.lock();
+        if let Some(entry) = health_map.get_mut(&id) {
+            entry.consecutive_failures = 0;
+            entry.unhealthy = false;
+            entry.last_error = None;
+        } else {
+            health_map.insert(id, crate::gateway::types::ProviderHealth {
+                consecutive_failures: 0,
+                unhealthy: false,
+                last_check: Some(chrono::Utc::now().to_rfc3339()),
+                last_error: None,
+                latency_history: Vec::new(),
+                average_latency_ms: None,
+            });
+        }
+    }
+    Ok(get_status_inner(&state))
+}
+
 pub fn get_status_inner(state: &SharedGatewayState) -> GatewayStatus {
     let gw = state.lock();
     let uptime = gw.start_time.map(|t| (Utc::now() - t).num_seconds() as u64);

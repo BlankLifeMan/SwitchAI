@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { X, FlaskConical, Loader2, CheckCircle, XCircle, Plus, AlertCircle, Image, ShieldCheck } from "lucide-react";
 import type { Provider } from "../types";
 import { useI18n } from "../i18n/I18nContext";
-import { PROVIDER_PRESETS, PRIORITY_OPTIONS } from "../providers/presets";
+import { PROVIDER_PRESETS, PRIORITY_OPTIONS, RECOMMENDED_MODELS } from "../providers/presets";
 import { useConfigStore } from "../store/configStore";
 
 interface Props {
@@ -20,6 +20,7 @@ export interface ProviderFormData {
   enabled: boolean;
   models: string[];
   multimodal_models: string[];
+  auto_health_check: boolean;
 }
 
 export function ProviderForm({ open, onClose, onSave, provider }: Props) {
@@ -32,6 +33,7 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [priority, setPriority] = useState(50);
   const [enabled, setEnabled] = useState(true);
+  const [autoHealthCheck, setAutoHealthCheck] = useState(true);
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [multimodalModels, setMultimodalModels] = useState<Set<string>>(new Set());
   const [modelInput, setModelInput] = useState("");
@@ -55,6 +57,7 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
       setApiKey("");
       setPriority(provider.priority);
       setEnabled(provider.enabled);
+      setAutoHealthCheck(provider.auto_health_check ?? true);
       setSelectedModels(new Set(provider.models));
       setMultimodalModels(new Set(provider.multimodal_models || []));
       setModelInput("");
@@ -68,6 +71,7 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
       setApiKey("");
       setPriority(50);
       setEnabled(true);
+      setAutoHealthCheck(true);
       setSelectedModels(new Set());
       setMultimodalModels(new Set());
       setModelInput("");
@@ -200,6 +204,7 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
         name, api_base: apiBase, api_key: apiKey, priority, enabled,
         models: Array.from(selectedModels),
         multimodal_models: Array.from(multimodalModels),
+        auto_health_check: autoHealthCheck,
       });
       onClose();
     } catch (e) {
@@ -302,11 +307,16 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
                 ))}
               </select>
             </div>
-            <div className="flex items-center pt-4">
+            <div className="flex flex-col justify-center gap-2 pt-2">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)}
                   className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600" />
                 <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{t("providerForm.enabled")}</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer" title={t("providerForm.autoHealthCheckDesc")}>
+                <input type="checkbox" checked={autoHealthCheck} onChange={(e) => setAutoHealthCheck(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600" />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{t("providerForm.autoHealthCheck")}</span>
               </label>
             </div>
           </div>
@@ -383,6 +393,33 @@ export function ProviderForm({ open, onClose, onSave, provider }: Props) {
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {presetKey === "" && (
+              <div className="mt-2 animate-fade-in">
+                <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                  {t("providerForm.recommendedModels")}
+                </label>
+                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
+                  {RECOMMENDED_MODELS.map((m) => {
+                    const isSelected = selectedModels.has(m);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => toggleModel(m)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                          isSelected
+                            ? "bg-primary-600 text-white shadow-sm"
+                            : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2.5 pt-1">

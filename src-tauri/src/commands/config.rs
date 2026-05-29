@@ -1,6 +1,6 @@
 use crate::db;
 use crate::gateway::types::{
-    Config, ConfigDisplay, Provider, ProviderDisplay, RoutingConfig,
+    Config, ConfigDisplay, Provider, ProviderDisplay, RoutingConfig, ClientApiKey, ModelPrice,
 };
 use parking_lot::Mutex;
 use rusqlite::Connection;
@@ -21,6 +21,8 @@ fn config_to_display(config: &Config) -> ConfigDisplay {
         gateway_on_startup: config.gateway_on_startup,
         last_gateway_state: config.last_gateway_state,
         model_mappings: config.model_mappings.clone(),
+        client_api_keys: config.client_api_keys.clone(),
+        model_prices: config.model_prices.clone(),
     }
 }
 
@@ -46,9 +48,12 @@ pub fn save_config(
     gateway_on_startup: bool,
     default_model_id: String,
     token_price_per_1k: f64,
+    gateway_mode: String,
     providers: Vec<Provider>,
     routing: RoutingConfig,
     model_mappings: HashMap<String, String>,
+    client_api_keys: Vec<ClientApiKey>,
+    model_prices: Vec<ModelPrice>,
     db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<ConfigDisplay, String> {
     let conn = db.lock();
@@ -59,6 +64,7 @@ pub fn save_config(
     current.server.log_retention_days = log_retention_days;
     current.server.default_model_id = default_model_id;
     current.server.token_price_per_1k = token_price_per_1k;
+    current.server.gateway_mode = gateway_mode;
     current.api_key = api_key;
     current.theme = theme;
     current.language = language;
@@ -67,6 +73,8 @@ pub fn save_config(
     current.providers = providers;
     current.routing = routing;
     current.model_mappings = model_mappings;
+    current.client_api_keys = client_api_keys;
+    current.model_prices = model_prices;
 
     db::save_config(&conn, &current, true)?;
     Ok(config_to_display(&current))
@@ -81,6 +89,7 @@ pub fn add_provider(
     enabled: bool,
     models: Vec<String>,
     multimodal_models: Vec<String>,
+    auto_health_check: bool,
     db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<ConfigDisplay, String> {
     let conn = db.lock();
@@ -97,6 +106,7 @@ pub fn add_provider(
         enabled,
         models,
         multimodal_models,
+        auto_health_check,
     };
 
     if !api_key.is_empty() {
@@ -118,6 +128,7 @@ pub fn update_provider(
     enabled: bool,
     models: Vec<String>,
     multimodal_models: Vec<String>,
+    auto_health_check: bool,
     db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<ConfigDisplay, String> {
     let conn = db.lock();
@@ -136,6 +147,7 @@ pub fn update_provider(
     provider.enabled = enabled;
     provider.models = models;
     provider.multimodal_models = multimodal_models;
+    provider.auto_health_check = auto_health_check;
 
     if let Some(key) = api_key {
         if !key.is_empty() {

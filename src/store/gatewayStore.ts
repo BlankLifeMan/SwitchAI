@@ -14,6 +14,7 @@ interface GatewayState {
   fetchStatus: () => Promise<void>;
   startGateway: () => Promise<void>;
   stopGateway: () => Promise<void>;
+  resetProviderHealth: (providerId: string) => Promise<void>;
 }
 
 export const useGatewayStore = create<GatewayState>((set) => ({
@@ -53,6 +54,17 @@ export const useGatewayStore = create<GatewayState>((set) => ({
       set({ status, operating: false });
     } catch (e) {
       set({ error: String(e), operating: false });
+      throw e;
+    }
+  },
+
+  resetProviderHealth: async (providerId: string) => {
+    try {
+      const invoke = await getInvoke();
+      const status = await invoke<GatewayStatus>("reset_provider_health", { id: providerId });
+      set({ status });
+    } catch (e) {
+      console.error("Failed to reset provider health:", e);
       throw e;
     }
   },

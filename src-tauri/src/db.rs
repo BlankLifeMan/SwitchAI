@@ -56,7 +56,7 @@ fn decrypt(key: &Key<Aes256Gcm>, ciphertext: &[u8], nonce: &[u8]) -> Result<Stri
     String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 
 pub fn init_db() -> Result<Connection, String> {
     let path = db_path();
@@ -110,7 +110,12 @@ pub fn init_db() -> Result<Connection, String> {
             duration_ms  INTEGER NOT NULL,
             success      INTEGER NOT NULL DEFAULT 1,
             error_message TEXT,
-            is_streaming INTEGER NOT NULL DEFAULT 0
+            is_streaming INTEGER NOT NULL DEFAULT 0,
+            request_body TEXT,
+            response_body TEXT,
+            endpoint TEXT,
+            request_headers TEXT,
+            client_key_name TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_logs_ts      ON request_logs(timestamp);
@@ -208,6 +213,12 @@ fn migrate(conn: &Connection, from: i32, to: i32) -> Result<(), String> {
                 .ok();
                 conn.execute_batch(
                     "CREATE INDEX IF NOT EXISTS idx_logs_success ON request_logs(success);",
+                )
+                .ok();
+            }
+            5 => {
+                conn.execute_batch(
+                    "ALTER TABLE request_logs ADD COLUMN client_key_name TEXT;",
                 )
                 .ok();
             }
@@ -470,8 +481,8 @@ pub fn delete_api_key(conn: &Connection, provider_id: &str) -> Result<(), String
 
 pub fn add_log(conn: &Connection, log: &RequestLog) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO request_logs (timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, request_body, response_body, endpoint, request_headers)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+        "INSERT INTO request_logs (timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, request_body, response_body, endpoint, request_headers, client_key_name)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
         params![
             log.timestamp.to_rfc3339(),
             log.model,
@@ -487,6 +498,7 @@ pub fn add_log(conn: &Connection, log: &RequestLog) -> Result<(), String> {
             log.response_body,
             log.endpoint,
             log.request_headers,
+            log.client_key_name,
         ],
     )
     .map_err(|e| format!("Failed to add log: {}", e))?;
@@ -504,6 +516,7 @@ pub fn query_logs(
     page_size: i64,
     model_filter: Option<&str>,
     success_filter: Option<bool>,
+    search_text_filter: Option<&str>,
 ) -> Result<LogPage, String> {
     let mut where_clauses = Vec::new();
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -517,6 +530,15 @@ pub fn query_logs(
     if let Some(s) = success_filter {
         where_clauses.push(format!("success = ?{}", param_values.len() + 1));
         param_values.push(Box::new(if s { 1 } else { 0 }));
+    }
+    if let Some(st) = search_text_filter {
+        if !st.is_empty() {
+            let idx = param_values.len() + 1;
+            where_clauses.push(format!(
+                "(error_message LIKE ?{idx} OR request_body LIKE ?{idx} OR response_body LIKE ?{idx} OR client_key_name LIKE ?{idx} OR model LIKE ?{idx} OR provider LIKE ?{idx} OR endpoint LIKE ?{idx} OR CAST(status_code AS TEXT) LIKE ?{idx})"
+            ));
+            param_values.push(Box::new(format!("%{}%", st)));
+        }
     }
 
     let where_sql = if where_clauses.is_empty() {
@@ -534,7 +556,7 @@ pub fn query_logs(
 
     let offset = (page - 1).max(0) * page_size;
     let query_sql = format!(
-        "SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, request_body, response_body, endpoint, request_headers
+        "SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, request_body, response_body, endpoint, request_headers, client_key_name
          FROM request_logs {} ORDER BY id DESC LIMIT ?{} OFFSET ?{}",
         where_sql,
         param_values.len() + 1,
@@ -565,6 +587,7 @@ pub fn query_logs(
                 response_body: row.get(11)?,
                 endpoint: row.get(12)?,
                 request_headers: row.get(13)?,
+                client_key_name: row.get(14)?,
             })
         })
         .map_err(|e| format!("{}", e))?;
@@ -726,7 +749,7 @@ pub fn get_daily_stats(conn: &Connection, days: i32) -> Result<Vec<DailyStat>, S
 
 pub fn export_logs_json(conn: &Connection) -> Result<String, String> {
     let mut stmt = conn
-        .prepare("SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming FROM request_logs ORDER BY id DESC")
+        .prepare("SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, client_key_name FROM request_logs ORDER BY id DESC")
         .map_err(|e| format!("{}", e))?;
     let rows = stmt
         .query_map([], |row| {
@@ -741,6 +764,7 @@ pub fn export_logs_json(conn: &Connection) -> Result<String, String> {
                 "success": row.get::<_, i32>(7)? != 0,
                 "error_message": row.get::<_, Option<String>>(8)?,
                 "is_streaming": row.get::<_, i32>(9)? != 0,
+                "client_key_name": row.get::<_, Option<String>>(10)?,
             }))
         })
         .map_err(|e| format!("{}", e))?;
@@ -753,9 +777,9 @@ pub fn export_logs_json(conn: &Connection) -> Result<String, String> {
 
 pub fn export_logs_csv(conn: &Connection) -> Result<String, String> {
     let mut stmt = conn
-        .prepare("SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming FROM request_logs ORDER BY id DESC")
+        .prepare("SELECT timestamp, model, provider, status_code, input_tokens, output_tokens, duration_ms, success, error_message, is_streaming, client_key_name FROM request_logs ORDER BY id DESC")
         .map_err(|e| format!("{}", e))?;
-    let mut csv = String::from("timestamp,model,provider,status_code,input_tokens,output_tokens,duration_ms,success,error_message,is_streaming\n");
+    let mut csv = String::from("timestamp,model,provider,status_code,input_tokens,output_tokens,duration_ms,success,error_message,is_streaming,client_key_name\n");
     let rows = stmt
         .query_map([], |row| {
             Ok((
@@ -769,14 +793,15 @@ pub fn export_logs_csv(conn: &Connection) -> Result<String, String> {
                 row.get::<_, i32>(7)?,
                 row.get::<_, Option<String>>(8)?,
                 row.get::<_, i32>(9)?,
+                row.get::<_, Option<String>>(10)?,
             ))
         })
         .map_err(|e| format!("{}", e))?;
     for row in rows {
-        let (ts, model, provider, sc, it, ot, dur, success, err, stream) =
+        let (ts, model, provider, sc, it, ot, dur, success, err, stream, client_name) =
             row.map_err(|e| format!("{}", e))?;
         csv.push_str(&format!(
-            r#""{}","{}","{}",{},{},{},{},{},{},{}\n"#,
+            r#""{}","{}","{}",{},{},{},{},{},{},{},"{}"#,
             ts,
             model,
             provider,
@@ -787,7 +812,9 @@ pub fn export_logs_csv(conn: &Connection) -> Result<String, String> {
             success,
             err.as_deref().unwrap_or(""),
             stream,
+            client_name.as_deref().unwrap_or(""),
         ));
+        csv.push('\n');
     }
     Ok(csv)
 }

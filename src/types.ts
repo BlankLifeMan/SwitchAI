@@ -8,11 +8,12 @@ export interface Provider {
   enabled: boolean;
   models: string[];
   multimodal_models: string[];
+  auto_health_check: boolean;
 }
 
 export interface ModelRouting {
   model: string;
-  strategy: "failover" | "loadbalance";
+  strategy: "failover" | "loadbalance" | "lowest_latency" | "lowest_cost";
   provider_order: string[];
 }
 
@@ -26,6 +27,21 @@ export interface ServerConfig {
   default_model_id: string;
   log_retention_days: number;
   token_price_per_1k?: number;
+  gateway_mode?: string;
+}
+
+export interface ClientApiKey {
+  id: string;
+  name: string;
+  api_key: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ModelPrice {
+  model_pattern: string;
+  input_price_per_1k: number;
+  output_price_per_1k: number;
 }
 
 export interface Config {
@@ -39,6 +55,8 @@ export interface Config {
   gateway_on_startup: boolean;
   last_gateway_state: boolean;
   model_mappings: Record<string, string>;
+  client_api_keys?: ClientApiKey[];
+  model_prices?: ModelPrice[];
 }
 
 export interface GatewayStatus {
@@ -55,6 +73,8 @@ export interface ProviderHealth {
   unhealthy: boolean;
   last_check?: string;
   last_error?: string;
+  latency_history?: number[];
+  average_latency_ms?: number;
 }
 
 export interface RequestLog {
@@ -72,6 +92,7 @@ export interface RequestLog {
   response_body?: string;
   endpoint?: string;
   request_headers?: string;
+  client_key_name?: string;
 }
 
 export interface PaginatedLogs {
@@ -84,6 +105,7 @@ export interface PaginatedLogs {
 export interface LogFilter {
   model?: string;
   success?: boolean;
+  search_text?: string;
 }
 
 export interface TestProviderResult {

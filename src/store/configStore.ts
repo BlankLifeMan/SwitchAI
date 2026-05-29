@@ -20,7 +20,8 @@ interface ConfigState {
     priority: number,
     enabled: boolean,
     models: string[],
-    multimodalModels: string[]
+    multimodalModels: string[],
+    autoHealthCheck: boolean
   ) => Promise<void>;
   updateProvider: (
     id: string,
@@ -30,7 +31,8 @@ interface ConfigState {
     priority: number,
     enabled: boolean,
     models: string[],
-    multimodalModels: string[]
+    multimodalModels: string[],
+    autoHealthCheck: boolean
   ) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   testProvider: (providerId: string) => Promise<TestProviderResult>;
@@ -77,9 +79,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         gatewayOnStartup: config.gateway_on_startup,
         defaultModelId: config.server.default_model_id,
         tokenPricePer1k: config.server.token_price_per_1k ?? 0.01,
+        gatewayMode: config.server.gateway_mode || "direct",
         providers: config.providers,
         routing: config.routing,
         modelMappings: config.model_mappings,
+        clientApiKeys: config.client_api_keys || [],
+        modelPrices: config.model_prices || [],
       });
       set({ config: result, loading: false });
     } catch (e) {
@@ -88,7 +93,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  addProvider: async (name, apiBase, apiKey, priority, enabled, models, multimodalModels) => {
+  addProvider: async (name, apiBase, apiKey, priority, enabled, models, multimodalModels, autoHealthCheck) => {
     set({ loading: true, error: null });
     try {
       const invoke = await getInvoke();
@@ -100,6 +105,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         enabled,
         models,
         multimodalModels,
+        autoHealthCheck,
       });
       set({ config: result, loading: false });
     } catch (e) {
@@ -108,7 +114,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  updateProvider: async (id, name, apiBase, apiKey, priority, enabled, models, multimodalModels) => {
+  updateProvider: async (id, name, apiBase, apiKey, priority, enabled, models, multimodalModels, autoHealthCheck) => {
     set({ loading: true, error: null });
     try {
       const invoke = await getInvoke();
@@ -121,6 +127,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         enabled,
         models,
         multimodalModels,
+        autoHealthCheck,
       });
       set({ config: result, loading: false });
     } catch (e) {

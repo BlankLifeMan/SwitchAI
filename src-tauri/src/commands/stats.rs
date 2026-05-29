@@ -17,7 +17,8 @@ pub fn get_logs(
     let page_size_i64 = page_size as i64;
     let model_filter = filter.as_ref().and_then(|f| f.model.as_deref());
     let success_filter = filter.as_ref().and_then(|f| f.success);
-    let result = db::query_logs(&conn, page_i64, page_size_i64, model_filter, success_filter)?;
+    let search_text_filter = filter.as_ref().and_then(|f| f.search_text.as_deref());
+    let result = db::query_logs(&conn, page_i64, page_size_i64, model_filter, success_filter, search_text_filter)?;
     Ok(PaginatedLogs {
         logs: result.logs,
         total: result.total as usize,
@@ -48,13 +49,24 @@ pub fn get_stats(
             Default::default()
         }
     };
-    let input_price = config.server.token_price_per_1k;
-    let output_price = config.server.token_price_per_1k;
     let mut summary = db::get_stats(&conn, days.map(|d| d as i32))?;
-    summary.total_cost = (summary.total_input_tokens as f64 * input_price / 1000.0)
-        + (summary.total_output_tokens as f64 * output_price / 1000.0);
-    summary.input_cost = summary.total_input_tokens as f64 * input_price / 1000.0;
-    summary.output_cost = summary.total_output_tokens as f64 * output_price / 1000.0;
+
+    let mut total_cost = 0.0;
+    let mut input_cost = 0.0;
+    let mut output_cost = 0.0;
+
+    for ms in &summary.by_model {
+        let (in_p, out_p) = config.get_model_price(&ms.model);
+        let in_c = ms.input_tokens as f64 * in_p / 1000.0;
+        let out_c = ms.output_tokens as f64 * out_p / 1000.0;
+        input_cost += in_c;
+        output_cost += out_c;
+        total_cost += in_c + out_c;
+    }
+
+    summary.total_cost = total_cost;
+    summary.input_cost = input_cost;
+    summary.output_cost = output_cost;
     Ok(summary)
 }
 

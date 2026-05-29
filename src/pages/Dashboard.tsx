@@ -91,10 +91,13 @@ export function Dashboard() {
     : "";
   const apiKey = config?.api_key || "";
   const modelId = config?.server?.default_model_id || "localhost";
+  const currentMode = config?.server?.gateway_mode || "direct";
+  const requestModel = currentMode === "unified" ? modelId : "gpt-4o";
+
   const curlExample = `curl ${gatewayUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey}" \\
-  -d '{"model": "${modelId}", "messages": [{"role": "user", "content": "Hello!"}]}'`;
+  -d '{"model": "${requestModel}", "messages": [{"role": "user", "content": "Hello!"}]}'`;
 
   useEffect(() => {
     if (!gatewayRunning) return;
@@ -108,6 +111,22 @@ export function Dashboard() {
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     addToast("success", `${label} copied`);
+  };
+
+  const handleModeChange = async (mode: string) => {
+    if (!config) return;
+    try {
+      await saveConfig({
+        ...config,
+        server: {
+          ...config.server,
+          gateway_mode: mode
+        }
+      });
+      addToast("success", t("settings.saved"));
+    } catch (e) {
+      addToast("error", String(e));
+    }
   };
 
   const handleGatewayToggle = async () => {
@@ -207,6 +226,42 @@ export function Dashboard() {
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5 min-w-[100px]">
               <Server className="w-3.5 h-3.5" />
+              {t("dashboard.gatewayMode")}
+            </label>
+            <div className="flex flex-col gap-1 flex-1">
+              <div className="flex items-center gap-1 bg-gray-105 dark:bg-gray-800 p-0.5 rounded-lg w-fit border border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("direct")}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    currentMode === "direct"
+                      ? "bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm"
+                      : "text-gray-650 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-250"
+                  }`}
+                >
+                  {t("dashboard.modeDirect")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange("unified")}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    currentMode === "unified"
+                      ? "bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm"
+                      : "text-gray-650 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-250"
+                  }`}
+                >
+                  {t("dashboard.modeUnified")}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 max-w-xl leading-relaxed">
+                {currentMode === "unified" ? t("dashboard.modeUnifiedDesc") : t("dashboard.modeDirectDesc")}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5 min-w-[100px]">
+              <Server className="w-3.5 h-3.5" />
               {t("dashboard.gatewayUrl")}
             </label>
             <div className="flex items-center gap-2 flex-1">
@@ -222,21 +277,23 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5 min-w-[100px]">
-              <Key className="w-3.5 h-3.5" />
-              {t("dashboard.modelId")}
-            </label>
-            <div className="flex items-center gap-2 flex-1">
-              <code className="flex-1 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-gray-100 break-all select-all">
-                {modelId}
-              </code>
-              <button onClick={() => copyText(modelId, t("dashboard.modelId"))}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0">
-                <Copy className="w-4 h-4" />
-              </button>
+          {currentMode === "unified" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5 min-w-[100px]">
+                <Key className="w-3.5 h-3.5" />
+                {t("dashboard.modelId")}
+              </label>
+              <div className="flex items-center gap-2 flex-1">
+                <code className="flex-1 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-mono text-gray-900 dark:text-gray-100 break-all select-all">
+                  {modelId}
+                </code>
+                <button onClick={() => copyText(modelId, t("dashboard.modelId"))}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0">
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5 min-w-[100px]">

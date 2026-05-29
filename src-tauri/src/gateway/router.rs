@@ -27,11 +27,11 @@ impl RouteSelector {
         Self { config }
     }
 
-    pub fn select(&self, model_name: &str, is_multimodal: bool) -> Result<SelectedRoute, String> {
+    pub fn select(&self, model_name: &str, is_multimodal: bool, health_map: &HashMap<String, crate::gateway::types::ProviderHealth>) -> Result<SelectedRoute, String> {
         let default_id = &self.config.server.default_model_id;
 
         if model_name == default_id {
-            return self.select_default(is_multimodal);
+            return self.select_default(is_multimodal, health_map);
         }
 
         if let Some(route) = self
@@ -39,15 +39,50 @@ impl RouteSelector {
             .routing
             .models
             .iter()
-            .find(|r| r.model == model_name)
+            .find(|r| crate::gateway::types::matches_wildcard(&r.model, model_name))
         {
-            let candidates = self.resolve_order(&route.provider_order, is_multimodal, Some(model_name));
+            let mut candidates = self.resolve_order(&route.provider_order, is_multimodal, Some(model_name));
             if candidates.is_empty() {
                 return Err(format!(
                     "No enabled providers found for routed model '{}'",
                     model_name
                 ));
             }
+
+            match route.strategy {
+                RoutingStrategy::Failover => {
+                    // Stays in resolved order
+                }
+                RoutingStrategy::LoadBalance => {
+                    // Picked dynamically at request time
+                }
+                RoutingStrategy::LowestLatency => {
+                    let get_latency = |c: &ProviderCandidate| -> u32 {
+                        health_map.get(&c.id)
+                            .and_then(|h| h.average_latency_ms)
+                            .unwrap_or(9999)
+                    };
+                    candidates.sort_by_key(|c| get_latency(c));
+                }
+                RoutingStrategy::LowestCost => {
+                    let get_cost = |c: &ProviderCandidate| -> f64 {
+                        let actual_model = if self.config.server.gateway_mode == "unified" {
+                            self.config.providers.iter()
+                                .find(|p| p.id == c.id)
+                                .and_then(|p| p.models.first().cloned())
+                                .unwrap_or_else(|| model_name.to_string())
+                        } else {
+                            model_name.to_string()
+                        };
+                        let (in_p, out_p) = self.config.get_model_price(&actual_model);
+                        in_p + out_p
+                    };
+                    candidates.sort_by(|a, b| {
+                        get_cost(a).partial_cmp(&get_cost(b)).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                }
+            }
+
             return Ok(SelectedRoute {
                 candidates,
                 strategy: route.strategy.clone(),
@@ -96,7 +131,7 @@ impl RouteSelector {
                 return multimodal;
             }
             tracing::warn!(
-                "Multimodal request for model '{}', but no multimodal-capable provider found. Falling back to regular providers.",
+                "html5 check: Multimodal request for model '{}', but no multimodal-capable provider found. Falling back to regular providers.",
                 model_name
             );
         }
@@ -161,7 +196,7 @@ impl RouteSelector {
         candidates
     }
 
-    fn select_default(&self, is_multimodal: bool) -> Result<SelectedRoute, String> {
+    fn select_default(&self, is_multimodal: bool, _health_map: &HashMap<String, crate::gateway::types::ProviderHealth>) -> Result<SelectedRoute, String> {
         let enabled: Vec<&Provider> = self
             .config
             .providers

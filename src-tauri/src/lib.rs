@@ -117,7 +117,9 @@ pub fn run() {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let run_log_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let run_log_dir = home.join(".switchai");
+    let _ = std::fs::create_dir_all(&run_log_dir);
     let file_appender = tracing_appender::rolling::never(&run_log_dir, "run.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     Box::leak(Box::new(_guard));
@@ -173,6 +175,7 @@ pub fn run() {
         .manage(gateway_state.clone())
         .manage(db_shared.clone())
         .setup(move |app| {
+            gateway_state.lock().spawn_log_worker();
             let app_handle = app.handle().clone();
 
             let build_tray = || -> Result<(), Box<dyn std::error::Error>> {
@@ -307,6 +310,7 @@ pub fn run() {
             commands::gateway::start_gateway,
             commands::gateway::stop_gateway,
             commands::gateway::gateway_status,
+            commands::gateway::reset_provider_health,
             commands::stats::get_logs,
             commands::stats::get_stats,
             commands::stats::export_logs,

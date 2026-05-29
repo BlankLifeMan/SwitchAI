@@ -14,8 +14,59 @@ const PRIORITY_LABELS: Record<number, string> = {
   100: "Critical",
 };
 
+function LatencySparkline({ history, avg }: { history: number[]; avg: number | undefined }) {
+  if (!history || history.length === 0) {
+    return <span className="text-gray-400 text-xs">-</span>;
+  }
+
+  const width = 60;
+  const height = 24;
+  const padding = 2;
+  
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const range = max - min;
+  
+  const points = history.map((val, index) => {
+    const x = (index / (history.length - 1 || 1)) * (width - padding * 2) + padding;
+    const y = range === 0 
+      ? height / 2 
+      : height - ((val - min) / range) * (height - padding * 2) - padding;
+    return `${x},${y}`;
+  });
+
+  const pathD = points.length > 0 ? `M ${points.join(" L ")}` : "";
+
+  return (
+    <div className="flex items-center gap-3">
+      {avg !== undefined && (
+        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+          {avg.toFixed(0)}ms
+        </span>
+      )}
+      {history.length > 1 && (
+        <svg width={width} height={height} className="overflow-visible">
+          <path
+            d={pathD}
+            fill="none"
+            className="stroke-primary-500 dark:stroke-primary-400"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={`${pathD} L ${width - padding},${height} L ${padding},${height} Z`}
+            className="fill-primary-500/10 dark:fill-primary-400/10"
+            stroke="none"
+          />
+        </svg>
+      )}
+    </div>
+  );
+}
+
 export function Providers() {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const config = useConfigStore((s) => s.config);
   const deleteProvider = useConfigStore((s) => s.deleteProvider);
   const testProvider = useConfigStore((s) => s.testProvider);
@@ -23,6 +74,7 @@ export function Providers() {
   const updateProvider = useConfigStore((s) => s.updateProvider);
   const addToast = useToastStore((s) => s.addToast);
   const gatewayStatus = useGatewayStore((s) => s.status);
+  const resetProviderHealth = useGatewayStore((s) => s.resetProviderHealth);
   const [formOpen, setFormOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -49,7 +101,8 @@ export function Providers() {
           data.priority,
           data.enabled,
           data.models,
-          data.multimodal_models
+          data.multimodal_models,
+          data.auto_health_check
         );
         addToast("success", t("toast.providerUpdated"));
       } else {
@@ -60,13 +113,23 @@ export function Providers() {
           data.priority,
           data.enabled,
           data.models,
-          data.multimodal_models
+          data.multimodal_models,
+          data.auto_health_check
         );
         addToast("success", t("toast.providerAdded"));
       }
     } catch (e) {
       addToast("error", editingProvider ? t("toast.providerUpdateFailed") : t("toast.providerAddFailed"));
       throw e;
+    }
+  };
+
+  const handleResetHealth = async (id: string) => {
+    try {
+      await resetProviderHealth(id);
+      addToast("success", t("toast.healthResetSuccess"));
+    } catch (e) {
+      addToast("error", t("toast.healthResetFailed"));
     }
   };
 
@@ -118,13 +181,14 @@ export function Providers() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
-              <th className="table-header">{t("provider.table.name")}</th>
+              <th className="table-header w-32">{t("provider.table.name")}</th>
               <th className="table-header">{t("provider.table.apiBase")}</th>
-              <th className="table-header">{t("provider.table.priority")}</th>
-              <th className="table-header">{t("provider.table.status")}</th>
-              <th className="table-header">{t("provider.table.models")}</th>
-              <th className="table-header">{t("provider.table.test")}</th>
-              <th className="table-header">{t("provider.table.actions")}</th>
+              <th className="table-header w-24">{t("provider.table.priority")}</th>
+              <th className="table-header w-36">{t("provider.table.status")}</th>
+              <th className="table-header w-36">{lang === "zh" ? "响应延迟" : "Latency"}</th>
+              <th className="table-header w-40">{t("provider.table.models")}</th>
+              <th className="table-header w-16">{t("provider.table.test")}</th>
+              <th className="table-header w-20">{t("provider.table.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -183,22 +247,41 @@ export function Providers() {
                         {p.enabled ? t("provider.enabled") : t("provider.disabled")}
                       </span>
                     ) : (
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          gatewayStatus.provider_health[p.id].unhealthy
-                            ? "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            gatewayStatus.provider_health[p.id].unhealthy
+                              ? "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"
+                              : gatewayStatus.provider_health[p.id].consecutive_failures > 0
+                                ? "bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300"
+                                : "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300"
+                          }`}
+                        >
+                          {gatewayStatus.provider_health[p.id].unhealthy
+                            ? t("provider.healthUnhealthy")
                             : gatewayStatus.provider_health[p.id].consecutive_failures > 0
-                              ? "bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300"
-                              : "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300"
-                        }`}
-                      >
-                        {gatewayStatus.provider_health[p.id].unhealthy
-                          ? t("provider.healthUnhealthy")
-                          : gatewayStatus.provider_health[p.id].consecutive_failures > 0
-                            ? t("provider.healthDegraded")
-                            : t("provider.healthHealthy")}
-                      </span>
+                              ? t("provider.healthDegraded")
+                              : t("provider.healthHealthy")}
+                        </span>
+                        {gatewayStatus.provider_health[p.id].unhealthy && (
+                          <button
+                            onClick={() => handleResetHealth(p.id)}
+                            className="px-1.5 py-0.5 text-[10px] font-medium bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950 text-red-600 dark:text-red-400 rounded border border-red-200 dark:border-red-900 transition-colors"
+                            title={t("provider.resetHealth")}
+                          >
+                            {t("provider.resetHealth")}
+                          </button>
+                        )}
+                      </div>
                     )}
+                  </div>
+                </td>
+                <td className="table-cell w-36">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <LatencySparkline
+                      history={gatewayStatus?.provider_health?.[p.id]?.latency_history || []}
+                      avg={gatewayStatus?.provider_health?.[p.id]?.average_latency_ms}
+                    />
                   </div>
                 </td>
                 <td className="table-cell">
@@ -263,7 +346,7 @@ export function Providers() {
             ))}
             {(!config?.providers || config.providers.length === 0) && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                   {t("provider.noProviders")}
                 </td>
               </tr>

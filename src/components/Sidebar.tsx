@@ -8,6 +8,7 @@ import {
   Power,
   PowerOff,
   Loader2,
+  Play,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useGatewayStore } from "../store/gatewayStore";
@@ -24,6 +25,7 @@ export function Sidebar() {
     { path: "/providers", label: t("sidebar.providers"), icon: Server },
     { path: "/models", label: t("sidebar.models"), icon: Boxes },
     { path: "/logs", label: t("sidebar.logs"), icon: ScrollText },
+    { path: "/playground", label: t("sidebar.playground"), icon: Play },
     { path: "/settings", label: t("sidebar.settings"), icon: Settings },
   ];
 

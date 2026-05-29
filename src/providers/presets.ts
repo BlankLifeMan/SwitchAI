@@ -139,3 +139,21 @@ export const PRIORITY_OPTIONS = [
   { value: 75, label: "priority.high" },
   { value: 100, label: "priority.critical" },
 ];
+
+export const RECOMMENDED_MODELS = [
+  "gpt-4o",
+  "gpt-4o-mini",
+  "o1",
+  "o1-mini",
+  "o3-mini",
+  "deepseek-chat",
+  "deepseek-reasoner",
+  "claude-3-5-sonnet-latest",
+  "claude-3-5-haiku-latest",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash",
+  "gemini-2.0-flash",
+  "qwen-turbo",
+  "qwen-plus",
+  "qwen-max"
+];

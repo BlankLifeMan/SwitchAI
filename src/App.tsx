@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Providers } from "./pages/Providers";
 import { Models } from "./pages/Models";
 import { Logs } from "./pages/Logs";
+import { Playground } from "./pages/Playground";
 import { Settings } from "./pages/Settings";
 import { ToastContainer } from "./components/Toast";
 import { useTheme } from "./hooks/useTheme";
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/providers" element={<Providers />} />
             <Route path="/models" element={<Models />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/playground" element={<Playground />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Layout>

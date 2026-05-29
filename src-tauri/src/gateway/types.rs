@@ -14,6 +14,8 @@ pub struct Provider {
     pub models: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub multimodal_models: Vec<String>,
+    #[serde(default = "default_true")]
+    pub auto_health_check: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,11 +25,15 @@ pub struct ModelRouting {
     pub provider_order: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RoutingStrategy {
     Failover,
     LoadBalance,
+    #[serde(rename = "lowest_latency")]
+    LowestLatency,
+    #[serde(rename = "lowest_cost")]
+    LowestCost,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +51,12 @@ pub struct ServerConfig {
     pub log_retention_days: u32,
     #[serde(default = "default_token_price")]
     pub token_price_per_1k: f64,
+    #[serde(default = "default_gateway_mode")]
+    pub gateway_mode: String,
+}
+
+fn default_gateway_mode() -> String {
+    "direct".to_string()
 }
 
 fn default_log_retention_days() -> u32 {
@@ -59,6 +71,10 @@ fn default_default_model_id() -> String {
     "localhost".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
@@ -67,6 +83,7 @@ impl Default for ServerConfig {
             default_model_id: "localhost".to_string(),
             log_retention_days: 7,
             token_price_per_1k: 0.01,
+            gateway_mode: "direct".to_string(),
         }
     }
 }
@@ -77,6 +94,22 @@ fn default_theme() -> String {
 
 fn default_language() -> String {
     "zh".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientApiKey {
+    pub id: String,
+    pub name: String,
+    pub api_key: String,
+    pub enabled: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelPrice {
+    pub model_pattern: String,
+    pub input_price_per_1k: f64,
+    pub output_price_per_1k: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +130,51 @@ pub struct Config {
     pub last_gateway_state: bool,
     #[serde(default)]
     pub model_mappings: HashMap<String, String>,
+    #[serde(default)]
+    pub client_api_keys: Vec<ClientApiKey>,
+    #[serde(default)]
+    pub model_prices: Vec<ModelPrice>,
+}
+
+pub fn matches_wildcard(pattern: &str, input: &str) -> bool {
+    let parts = pattern.split('*').collect::<Vec<&str>>();
+    if parts.len() == 1 {
+        return pattern == input;
+    }
+    if !pattern.starts_with('*') {
+        if !input.starts_with(parts[0]) {
+            return false;
+        }
+    }
+    if !pattern.ends_with('*') {
+        if !input.ends_with(parts[parts.len() - 1]) {
+            return false;
+        }
+    }
+    let mut current_input = input;
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+        if let Some(idx) = current_input.find(part) {
+            current_input = &current_input[idx + part.len()..];
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+impl Config {
+    pub fn get_model_price(&self, model: &str) -> (f64, f64) {
+        for mp in &self.model_prices {
+            if matches_wildcard(&mp.model_pattern, model) {
+                return (mp.input_price_per_1k, mp.output_price_per_1k);
+            }
+        }
+        let default_price = self.server.token_price_per_1k;
+        (default_price, default_price)
+    }
 }
 
 impl Default for Config {
@@ -112,6 +190,12 @@ impl Default for Config {
             gateway_on_startup: false,
             last_gateway_state: false,
             model_mappings: HashMap::new(),
+            client_api_keys: Vec::new(),
+            model_prices: vec![ModelPrice {
+                model_pattern: "*".to_string(),
+                input_price_per_1k: 0.01,
+                output_price_per_1k: 0.01,
+            }],
         }
     }
 }
@@ -127,6 +211,7 @@ pub struct ProviderDisplay {
     pub enabled: bool,
     pub models: Vec<String>,
     pub multimodal_models: Vec<String>,
+    pub auto_health_check: bool,
 }
 
 impl From<&Provider> for ProviderDisplay {
@@ -141,6 +226,7 @@ impl From<&Provider> for ProviderDisplay {
             enabled: p.enabled,
             models: p.models.clone(),
             multimodal_models: p.multimodal_models.clone(),
+            auto_health_check: p.auto_health_check,
         }
     }
 }
@@ -157,6 +243,10 @@ pub struct ConfigDisplay {
     pub gateway_on_startup: bool,
     pub last_gateway_state: bool,
     pub model_mappings: HashMap<String, String>,
+    #[serde(default)]
+    pub client_api_keys: Vec<ClientApiKey>,
+    #[serde(default)]
+    pub model_prices: Vec<ModelPrice>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +270,8 @@ pub struct RequestLog {
     pub endpoint: Option<String>,
     #[serde(default)]
     pub request_headers: Option<String>,
+    #[serde(default)]
+    pub client_key_name: Option<String>,
 }
 
 
@@ -200,6 +292,10 @@ pub struct ProviderHealth {
     pub unhealthy: bool,
     pub last_check: Option<String>,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub latency_history: Vec<u32>,
+    #[serde(default)]
+    pub average_latency_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,6 +410,7 @@ pub struct PaginatedLogs {
 pub struct LogFilter {
     pub model: Option<String>,
     pub success: Option<bool>,
+    pub search_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,4 +435,17 @@ pub struct StatsSnapshot {
 pub struct TestResult {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingsRequest {
+    pub model: String,
+    pub input: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(flatten)]
+    #[serde(default)]
+    pub extra: HashMap<String, serde_json::Value>,
 }

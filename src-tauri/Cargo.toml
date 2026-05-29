@@ -1,6 +1,6 @@
 [package]
 name = "switchai"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "Desktop AI Proxy Gateway with load balancing, failover, and smart routing for multiple AI providers"
 authors = ["SwitchAI Contributors"]
@@ -45,7 +45,7 @@ bytes = "1"
 tokio-stream = "0.1"
 
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 opt-level = "s"
 strip = true
